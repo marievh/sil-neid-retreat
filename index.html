@@ -547,6 +547,8 @@ document.addEventListener("click", e=>{
   if (t.closest("#outBtn")) { endSession(); if (CONFIG.API_URL){ load().then(x=>{ state=x; render(); }); } else render(); return; }
   const c = t.closest("[data-open]"); if (c) openPerson(c.dataset.open);
 });
+// Enter in a dialog field presses that dialog's main button (not Cancel, which comes first)
+document.addEventListener("keydown", e=>{ if (e.key==="Enter" && e.target.matches("dialog input")){ e.preventDefault(); e.target.form.querySelector(".btn.solid")?.click(); } });
 $("#editBtn").onclick = openLogin;
 $("#dlBtn").onclick = ()=>{ $("#dlErr").textContent=""; $("#dlDlg").showModal(); };
 $("#search").oninput = e=>{ query = e.target.value.trim().toLowerCase(); render(); };
