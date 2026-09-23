@@ -40,6 +40,8 @@ button,input,textarea{font:inherit;color:inherit}
 .tabs{display:flex;gap:8px;overflow-x:auto;max-width:100%}
 .tab{border:0;border-radius:2px;background:#D8ECEB;color:var(--deep);padding:8px 16px;font:700 15px/1 var(--display);letter-spacing:.04em;cursor:pointer;white-space:nowrap}
 .tab[aria-selected="true"]{background:var(--yellow)}
+.tab{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:10px 16px}
+.tab .badge{margin-left:0;font-size:12px}
 .badge{display:inline-block;margin-left:8px;min-width:22px;padding:2px 6px;border-radius:999px;background:var(--orange);color:#fff;font:700 12px/1.2 var(--body)}
 .badge.done{background:var(--deep)}
 .search{flex:1 1 200px;max-width:320px;margin-left:auto;border:0;border-radius:2px;padding:9px 12px;background:#fff;color:#16282E}
@@ -64,6 +66,11 @@ main{padding:20px clamp(16px,4vw,40px) 60px}
 .who b{display:block;font-size:14.5px;line-height:1.25}
 .who .org{display:block;font-size:12.5px;font-weight:600;color:var(--teal)}
 .who .bio{display:block;margin-top:4px;font-size:13px;line-height:1.45;color:var(--muted)}
+.who .focus{display:block;margin-top:6px;font-size:12.5px;line-height:1.4;color:var(--ink)}
+.who .focus b{display:block;font-size:12.5px;color:var(--teal)}
+.who .fi{display:block;padding-left:14px;text-indent:-10px}
+.who .fi::before{content:"•";display:inline-block;width:10px;text-indent:0;color:var(--teal)}
+.hint{font-size:12.5px;color:var(--muted);margin:4px 0 0}
 .fac{display:inline-block;margin-top:3px;font-size:11.5px;font-weight:700;background:var(--yellow);color:#16282E;border-radius:2px;padding:1px 6px}
 .tools{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
 .star{border:0;background:transparent;font-size:18px;line-height:1;cursor:pointer;color:var(--muted);padding:4px}
@@ -99,11 +106,10 @@ dialog::backdrop{background:rgba(11,52,65,.55)}
   </header>
   <nav class="bar" aria-label="Breakout slots">
     <div class="tabs" role="tablist" id="tabs"></div>
-    <input class="search" id="search" type="search" placeholder="Find a person or organization" aria-label="Find a person or organization">
+    <input class="search" id="search" type="search" placeholder="Search names, orgs, focus areas" aria-label="Find a person, organization, or focus area">
   </nav>
   <main>
     <p class="loading" id="loading">Loading the board… this can take a few seconds the first time.</p>
-    <p class="rnote" id="rnote"></p>
     <div class="board">
       <section class="col pool" aria-labelledby="poolH">
         <div class="col-head" style="--stripe:var(--yellow)"><h2 id="poolH">Not yet placed</h2><p id="poolSub"></p></div>
@@ -123,7 +129,7 @@ dialog::backdrop{background:rgba(11,52,65,.55)}
 /* ---------- Config ----------
    Paste your Apps Script web app URL (ends in /exec) between the quotes.
    There's no sign-in for now: anyone with the site link can view and edit. */
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbySK664B7J0afqkIkIZpCc_q6zqv4yuqnPy6Am2NgeI26rT-5qrFY2w04wE8YSbomz_/exec", REFRESH_SECONDS: 30 };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbyZS0uhxg17gbubJ9p95dPxcfoTWJuuvjQeFa5nheCUlQ3PlTU45RrE_lywP90qM6kE/exec", REFRESH_SECONDS: 30 };
 const SEED = null;
 const CACHE_KEY = "neid-breakouts-cache";
 const getCache = () => { try { return JSON.parse(localStorage.getItem(CACHE_KEY)); } catch(e){ return null; } };
@@ -182,12 +188,19 @@ const byId = id => state.people.find(p=>p.id===id);
 const unplaced = r => { const a = state.assign[r.id] || {}; return state.people.filter(p=>!a[p.id] || !r.sessions.some(s=>s.id===a[p.id].s)); };
 const sortPeople = (list, a) => list.sort((x,y)=>(a[y.id]?.f?1:0)-(a[x.id]?.f?1:0) || x.name.localeCompare(y.name));
 
+// One focus area per line. Leading "-", "*" or "•" is optional; several lines show as bullets.
+function focusHTML(text){
+  const lines = String(text||"").split(/\r?\n/).map(l=>l.replace(/^\s*[-*•]\s*/,"").trim()).filter(Boolean);
+  if (!lines.length) return "";
+  if (lines.length===1 && !/^\s*[-*•]/.test(text)) return `<span class="focus"><b>Focus areas</b>${esc(lines[0])}</span>`;
+  return `<span class="focus"><b>Focus areas</b>${lines.map(l=>`<span class="fi">${esc(l)}</span>`).join("")}</span>`;
+}
 function card(p, a, inSession){
-  const hit = query && (p.name+" "+p.org+" "+p.title).toLowerCase().includes(query);
+  const hit = query && [p.name,p.org,p.title,p.focus].join(" ").toLowerCase().includes(query);
   const sub = [p.title, p.org].filter(Boolean).join(", ");
   return `<li data-id="${p.id}"><div class="card ${query?(hit?"hit":"dim"):""}">
     <span class="av" aria-hidden="true">${esc(initials(p.name))}</span>
-    <span class="who"><b>${esc(p.name)}</b>${sub?`<span class="org">${esc(sub)}</span>`:""}${a?.f?'<span class="fac">Facilitator</span>':""}${p.bio?`<span class="bio">${esc(p.bio)}</span>`:""}</span>
+    <span class="who"><b>${esc(p.name)}</b>${sub?`<span class="org">${esc(sub)}</span>`:""}${a?.f?'<span class="fac">Facilitator</span>':""}${p.bio?`<span class="bio">${esc(p.bio)}</span>`:""}${focusHTML(p.focus)}</span>
     <span class="tools">${inSession?`<button type="button" class="star" data-star="${p.id}" aria-pressed="${!!a?.f}" aria-label="Mark ${esc(p.name)} as facilitator">${a?.f?"★":"☆"}</button>`:""}
     <button type="button" class="pen" data-person="${p.id}" aria-label="Edit ${esc(p.name)}">Edit</button></span></div></li>`;
 }
@@ -196,12 +209,13 @@ function render(){
   const R = curRound(); if (!R) { $("#sessions").innerHTML = "<p>No breakout slots yet. Add one in the Slots tab of the Google Sheet.</p>"; return; }
   round = R.id;
   const asg = state.assign[R.id] || (state.assign[R.id] = {});
-  $("#tabs").innerHTML = state.rounds.map(r=>{ const n = unplaced(r).length;
-    return `<button type="button" class="tab" role="tab" aria-selected="${r.id===R.id}" data-round="${r.id}" aria-label="${esc(r.label)}, ${n} not yet placed">${esc(r.label)}${n?`<span class="badge" aria-hidden="true">${n}</span>`:`<span class="badge done" aria-hidden="true">✓</span>`}</button>`; }).join("");
-  $("#rnote").textContent = R.note || R.label;
+  // Named by position, so they stay in order even if the agenda times move.
+  $("#tabs").innerHTML = state.rounds.map((r,i)=>{ const n = unplaced(r).length;
+    const left = n ? `${n} ${n===1?"person":"people"} to be assigned` : "Everyone assigned";
+    return `<button type="button" class="tab" role="tab" aria-selected="${r.id===R.id}" data-round="${r.id}">Breakout Session ${i+1}<span class="badge ${n?"":"done"}">${left}</span></button>`; }).join("");
   const pool = sortPeople(unplaced(R), asg);
   $("#pool").innerHTML = pool.map(p=>card(p,null,false)).join("") || `<li class="empty">Everyone has a session in this slot.</li>`;
-  $("#poolSub").textContent = pool.length ? `${pool.length} ${pool.length===1?"person":"people"}. Drag them into a session.` : "";
+  $("#poolSub").textContent = pool.length ? "Drag people into a session." : "";
   $("#sessions").innerHTML = R.sessions.map((s,i)=>{
     const ppl = sortPeople(state.people.filter(p=>asg[p.id]?.s===s.id), asg);
     return `<section class="col" aria-labelledby="h-${s.id}"><div class="col-head" style="--stripe:${STRIPES[i%STRIPES.length]}">
@@ -237,9 +251,11 @@ function openPerson(id){
     <label for="fTitle">Title</label><input id="fTitle" value="${esc(p.title)}">
     <label for="fOrg">Organization</label><input id="fOrg" value="${esc(p.org)}">
     <label for="fBio">Short bio</label><textarea id="fBio">${esc(p.bio)}</textarea>
+    <label for="fFocus">Focus areas</label><textarea id="fFocus" style="min-height:90px" placeholder="- Interested in independent funding&#10;- Women and girls&#10;- Haiti, but open to expanding in Latin America">${esc(p.focus||"")}</textarea>
+    <p class="hint">Put each focus area on its own line to show them as bullet points.</p>
     <div class="row">${cancelBtn}<button type="submit" class="btn solid">Save changes</button></div>`;
   $("#personForm").onsubmit = e=>{ e.preventDefault();
-    p.name = $("#fName").value.trim() || p.name; p.title = $("#fTitle").value.trim(); p.org = $("#fOrg").value.trim(); p.bio = $("#fBio").value.trim();
+    p.name = $("#fName").value.trim() || p.name; p.title = $("#fTitle").value.trim(); p.org = $("#fOrg").value.trim(); p.bio = $("#fBio").value.trim(); p.focus = $("#fFocus").value.trim();
     $("#personDlg").close(); render(); save(); };
   $("#personDlg").showModal();
 }

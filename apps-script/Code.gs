@@ -11,14 +11,14 @@
  * Any other tabs in the Sheet (such as Days and Agenda) are left alone.
  */
 
-// Labels used for the three current slots if the Slots tab has no label filled in.
-const DEFAULT_LABELS = { r1: 'Tue 11:15 am', r2: 'Wed 9:30 am', r3: 'Wed 10:15 am' };
+// (Unused: the site names slots Breakout Session 1, 2, ... by their order.)
+const DEFAULT_LABELS = {};
 
 const TABS = {
   Settings:    ['key', 'value'],
   Slots:       ['slot_id', 'label', 'note'],
   Sessions:    ['slot_id', 'session_id', 'title', 'description'],
-  People:      ['person_id', 'name', 'title', 'organization', 'bio'],
+  People:      ['person_id', 'name', 'title', 'organization', 'bio', 'focus_areas'],
   Assignments: ['slot_id', 'person_id', 'person_name', 'session_id', 'facilitator']
 };
 
@@ -135,7 +135,7 @@ function setRev(n) {
 
 function readState() {
   const people = table('People', 'person_id', 'p').map(r => ({
-    id: r.person_id, name: r.name, title: r.title, org: r.organization, bio: r.bio }));
+    id: r.person_id, name: r.name, title: r.title, org: r.organization, bio: r.bio, focus: r.focus_areas || '' }));
   const sessions = table('Sessions', 'session_id', 's');
   const rounds = table('Slots', 'slot_id', 'r').map(sl => ({
     id: sl.slot_id, label: sl.label || DEFAULT_LABELS[sl.slot_id] || sl.slot_id, note: sl.note || '',
@@ -168,7 +168,7 @@ function writeState(s) {
   writeTable('Sessions', [].concat(...(s.rounds || []).map(r => (r.sessions || []).map(x => ({
     slot_id: r.id, session_id: x.id, title: x.title, description: x.desc })))));
   writeTable('People', (s.people || []).map(p => ({
-    person_id: p.id, name: p.name, title: p.title, organization: p.org, bio: p.bio })));
+    person_id: p.id, name: p.name, title: p.title, organization: p.org, bio: p.bio, focus_areas: p.focus || '' })));
   const rows = [];
   Object.keys(s.assign || {}).forEach(slot => Object.keys(s.assign[slot]).forEach(pid => {
     const a = s.assign[slot][pid];
