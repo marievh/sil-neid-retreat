@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>NEID Global Retreat · Breakout planning</title>
+<title>NEID Global Retreat · Breakout Sessions</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23F4552A'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -117,7 +117,7 @@ dialog::backdrop{background:rgba(11,52,65,.55)}
 
 <div id="app">
   <header class="top">
-    <div><small>NEID Global Retreat</small><h1>Breakout planning</h1></div>
+    <div><small>NEID Global Retreat</small><h1>Breakout Sessions</h1></div>
     <div class="status"><span id="saveStatus" aria-live="polite"></span><span id="planner"></span></div>
   </header>
   <nav class="bar" aria-label="Breakout slots">
@@ -139,11 +139,11 @@ dialog::backdrop{background:rgba(11,52,65,.55)}
 
 <dialog id="personDlg"><form class="dlg" id="personForm"></form></dialog>
 <dialog id="planDlg"><form class="dlg" id="planForm">
-  <h3>Admin details</h3>
-  <p class="hintline">Interview takeaways are for admins only. Enter the admin password to see them.</p>
-  <label for="planPw">Admin password</label><input id="planPw" type="password" autocomplete="current-password" required>
+  <h3>Admin view</h3>
+  <p class="hintline"></p>
+  <label for="planPw">Password</label><input id="planPw" type="password" autocomplete="current-password" required>
   <p class="errline" id="planErr" role="alert"></p>
-  <div class="row"><button type="button" class="btn quiet" data-close>Cancel</button><button type="submit" class="btn solid" id="planGo">Show details</button></div>
+  <div class="row"><button type="button" class="btn quiet" data-close>Cancel</button><button type="submit" class="btn solid" id="planGo">Login as Admin</button></div>
 </form></dialog>
 <dialog id="sessionDlg"><form class="dlg" id="sessionForm"></form></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -212,7 +212,7 @@ $("#planForm").addEventListener("submit", async e=>{
   const j = await unlock($("#planPw").value);
   $("#planGo").disabled = false;
   if (!j.ok){ $("#planErr").textContent = PLAN_ERRORS[j.error] || "Something went wrong. Try again."; return; }
-  $("#planDlg").close(); toast("Interview details are showing");
+  $("#planDlg").close(); toast("Logged in to admin view");
 });
 function save(){
   if (!CONFIG.API_URL) { setCache(state); return; }
@@ -277,8 +277,8 @@ function render(){
   const R = curRound(); if (!R) { $("#sessions").innerHTML = "<p>No breakout slots yet. Add one in the Slots tab of the Google Sheet.</p>"; return; }
   round = R.id;
   $("#planner").innerHTML = profiles
-    ? `<button type="button" class="switch" id="detBtn" aria-pressed="${showDetails}">Interview details: ${showDetails?"On":"Off"}</button> <button type="button" class="btn quiet" id="lockBtn">Hide and lock</button>`
-    : `<button type="button" class="btn quiet" id="planBtn">Admin details</button>`;
+    ? `<button type="button" class="switch" id="detBtn" aria-pressed="${showDetails}">Show interview details: ${showDetails?"On":"Off"}</button> <button type="button" class="btn quiet" id="lockBtn">Hide profile details and log out</button>`
+    : `<button type="button" class="btn quiet" id="planBtn">Admin view</button>`;
   if (profiles && showDetails){
     const counts = {}; Object.values(profiles).forEach(pr=>pr.tags.forEach(tg=>counts[tg]=(counts[tg]||0)+1));
     const tags = Object.keys(counts).sort((a,b)=>counts[b]-counts[a] || a.localeCompare(b));
@@ -290,10 +290,10 @@ function render(){
   // Named by position, so they stay in order even if the agenda times move.
   $("#tabs").innerHTML = state.rounds.map((r,i)=>{ const n = unplaced(r).length;
     const left = n ? `${n} ${n===1?"person":"people"} to be assigned` : "Everyone assigned";
-    return `<button type="button" class="tab" role="tab" aria-selected="${r.id===R.id}" data-round="${r.id}">Breakout Session ${i+1}<span class="badge ${n?"":"done"}">${left}</span></button>`; }).join("");
+    return `<button type="button" class="tab" role="tab" aria-selected="${r.id===R.id}" data-round="${r.id}">Session ${i+1}<span class="badge ${n?"":"done"}">${left}</span></button>`; }).join("");
   const pool = sortPeople(unplaced(R), asg);
-  $("#pool").innerHTML = pool.map(p=>card(p,null,false)).join("") || `<li class="empty">Everyone has a session in this slot.</li>`;
-  $("#poolSub").textContent = pool.length ? "Drag people into a session." : "";
+  $("#pool").innerHTML = pool.map(p=>card(p,null,false)).join("") || `<li class="empty">Everyone is assigned to a breakout in this slot.</li>`;
+  $("#poolSub").textContent = pool.length ? "Drag people into a breakout." : "";
   $("#sessions").innerHTML = R.sessions.map((s,i)=>{
     const ppl = sortPeople(state.people.filter(p=>asg[p.id]?.s===s.id), asg);
     return `<section class="col" aria-labelledby="h-${s.id}"><div class="col-head" style="--stripe:${STRIPES[i%STRIPES.length]}">
@@ -327,7 +327,7 @@ const PROFILE_FIELDS = [["chars","pChars","Interviewee characteristics",60],["f1
 function plannerFields(pr){
   pr = Object.assign({}, EMPTY_PROFILE, pr || {});
   return `<div class="details" style="margin-top:18px;padding:12px 14px">
-    <span class="dl" style="font-size:14px">Admin details (admins only)</span>
+    <span class="dl" style="font-size:14px">Admin view</span>
     ${PROFILE_FIELDS.map(([k,id,label,h])=>`<label for="${id}">${label}</label><textarea id="${id}" style="min-height:${h}px">${esc(pr[k])}</textarea>`).join("")}
     <label for="pTags">Issue tags</label><input id="pTags" value="${esc(pr.tags.join("; "))}">
     <p class="hint">Separate tags with semicolons, for example: Collaboration; Scale; Locally led</p></div>`;
@@ -343,8 +343,8 @@ async function saveProfile(p){
   setStatus("Saving…");
   const j = await call({action:"saveProfile", password:getPlanPw(), person_id:p.id, person_name:p.name, profile:next});
   if (j.ok) setStatus("All changes saved");
-  else if (j.error==="bad_password"){ lock(); toast("The admin password changed. Open Admin details to sign in again."); }
-  else { setStatus("Not saved"); toast("Couldn't save the admin details. Try again."); }
+  else if (j.error==="bad_password"){ lock(); toast("The admin password changed. Open Admin view to sign in again."); }
+  else { setStatus("Not saved"); toast("Couldn't save the admin view. Try again."); }
 }
 function openPerson(id){
   const p = byId(id);
@@ -388,7 +388,7 @@ document.addEventListener("click", e=>{
   const t = e.target;
   if (t.closest("[data-close]")) { t.closest("dialog").close(); return; }
   if (t.closest("#planBtn")) { openPlanner(); return; }
-  if (t.closest("#lockBtn")) { lock(); toast("Interview details hidden"); return; }
+  if (t.closest("#lockBtn")) { lock(); toast("Logged out of admin view"); return; }
   if (t.closest("#detBtn")) { showDetails = !showDetails; if (!showDetails) activeTag = ""; render(); return; }
   if (t.closest("#clearTag")) { activeTag = ""; render(); return; }
   const tg = t.closest("[data-tag]"); if (tg){ activeTag = activeTag===tg.dataset.tag ? "" : tg.dataset.tag; render(); return; }
