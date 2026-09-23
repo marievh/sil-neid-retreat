@@ -2,12 +2,17 @@
  * NEID Global Retreat breakout planning: Google Sheets backend.
  *
  * Bound to the retreat Google Sheet (Extensions > Apps Script).
- * There is no password for now: anyone with the site link can view and edit.
+ * The board has no password: anyone with the site link can view and edit it.
  * Google Sheets version history (File > Version history) can undo unwanted changes.
+ *
+ * Interview details (the Profiles tab) are for admins only. They're sent only to
+ * someone who enters the admin password, set in Project Settings >
+ * Script Properties as ADMIN_PASSWORD. Admins can edit them on the site
+ * (after entering the password) or directly in the Profiles tab.
  * Deploy as: Web app, Execute as "Me", Who has access "Anyone".
  * After any code change: Deploy > Manage deployments > Edit (pencil) > Version: New version > Deploy.
  *
- * Uses these tabs: Settings, Slots, Sessions, People, Assignments.
+ * Uses these tabs: Settings, Slots, Sessions, People, Assignments, Profiles.
  * Any other tabs in the Sheet (such as Days and Agenda) are left alone.
  */
 
@@ -19,7 +24,8 @@ const TABS = {
   Slots:       ['slot_id', 'label', 'note'],
   Sessions:    ['slot_id', 'session_id', 'title', 'description'],
   People:      ['person_id', 'name', 'title', 'organization', 'bio', 'focus_areas'],
-  Assignments: ['slot_id', 'person_id', 'person_name', 'session_id', 'facilitator']
+  Assignments: ['slot_id', 'person_id', 'person_name', 'session_id', 'facilitator'],
+  Profiles:    ['person_id', 'person_name', 'interviewee_characteristics', 'focus_1', 'focus_2', 'focus_3', 'strong_view', 'issue_tags']
 };
 
 function doPost(e) {
@@ -28,6 +34,28 @@ function doPost(e) {
   catch (err) { return respond({ ok: false, error: 'bad_request' }); }
 
   if (body.action === 'load') return respond({ ok: true, state: cachedState() });
+
+  if (body.action === 'profiles') {
+    const real = adminPassword();
+    if (!real) return respond({ ok: false, error: 'no_password_set' });
+    if (String(body.password || '').trim() !== real) return respond({ ok: false, error: 'bad_password' });
+    return respond({ ok: true, profiles: cachedProfiles(), rev: getRev() });
+  }
+
+  if (body.action === 'saveProfile') {
+    const real = adminPassword();
+    if (!real) return respond({ ok: false, error: 'no_password_set' });
+    if (String(body.password || '').trim() !== real) return respond({ ok: false, error: 'bad_password' });
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(20000)) return respond({ ok: false, error: 'busy' });
+    try {
+      writeProfile(String(body.person_id || ''), String(body.person_name || ''), body.profile || {});
+      CacheService.getScriptCache().remove('profiles');
+      return respond({ ok: true });
+    } finally {
+      lock.releaseLock();
+    }
+  }
 
   if (body.action === 'save') {
     const lock = LockService.getScriptLock();
@@ -64,8 +92,9 @@ function onEdit(e) {
 // Run once from the editor to grant permissions and check the setup.
 function testSetup() {
   const s = readState();
-  Logger.log('People: %s. Breakout slots: %s (%s).',
-    s.people.length, s.rounds.length, s.rounds.map(r => r.label).join(', '));
+  Logger.log('People: %s. Breakout slots: %s. Interview profiles matched: %s. Admin password set: %s.',
+    s.people.length, s.rounds.length, Object.keys(readProfiles()).length,
+    !!adminPassword());
 }
 
 /* ---------- Cache: makes sign-in and refreshes fast ---------- */
@@ -81,9 +110,65 @@ function cachedState() {
   if (json.length < 95000) cache.put(CACHE_KEY, json, 600);
   return s;
 }
-function clearCache() { CacheService.getScriptCache().remove(CACHE_KEY); }
+function cachedProfiles() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('profiles');
+  if (hit) return JSON.parse(hit);
+  const p = readProfiles();
+  const json = JSON.stringify(p);
+  if (json.length < 95000) cache.put('profiles', json, 600);
+  return p;
+}
+function clearCache() { CacheService.getScriptCache().removeAll([CACHE_KEY, 'profiles']); }
+
+// Profiles keyed by person_id. Rows without a matching id are matched by name.
+function readProfiles() {
+  const people = table('People');
+  const byName = {};
+  people.forEach(p => { byName[String(p.name).toLowerCase()] = p.person_id; });
+  const ids = new Set(people.map(p => p.person_id));
+  const out = {};
+  table('Profiles').forEach(r => {
+    const id = ids.has(r.person_id) ? r.person_id : byName[String(r.person_name).toLowerCase()];
+    if (!id) return;
+    out[id] = {
+      chars: r.interviewee_characteristics, f1: r.focus_1, f2: r.focus_2, f3: r.focus_3, view: r.strong_view,
+      tags: String(r.issue_tags || '').split(/[;\n]/).map(t => t.trim()).filter(Boolean)
+    };
+  });
+  return out;
+}
+
+// Updates one person's row in the Profiles tab (matched by id, then name), or adds a row.
+function writeProfile(id, name, p) {
+  const sh = sheet('Profiles');
+  const values = sh.getDataRange().getDisplayValues();
+  const head = values[0].map(h => String(h).trim());
+  const col = h => head.indexOf(h);
+  let row = -1;
+  for (let i = 1; i < values.length; i++) {
+    if (id && String(values[i][col('person_id')]).trim() === id) { row = i; break; }
+  }
+  if (row < 0 && name) for (let i = 1; i < values.length; i++) {
+    if (String(values[i][col('person_name')]).trim().toLowerCase() === name.toLowerCase()) { row = i; break; }
+  }
+  const rec = {
+    person_id: id, person_name: name, interviewee_characteristics: p.chars || '',
+    focus_1: p.f1 || '', focus_2: p.f2 || '', focus_3: p.f3 || '',
+    strong_view: p.view || '', issue_tags: (p.tags || []).join('; ')
+  };
+  const line = head.map((h, j) => (h in rec ? rec[h] : (row >= 0 ? values[row][j] : '')));
+  const target = row >= 0 ? row + 1 : Math.max(sh.getLastRow(), 1) + 1;
+  sh.getRange(target, 1, 1, head.length).setNumberFormat('@').setValues([line]);
+}
 
 /* ---------- Helpers ---------- */
+
+// ADMIN_PASSWORD (PLANNER_PASSWORD still works if it was set earlier).
+function adminPassword() {
+  const props = PropertiesService.getScriptProperties();
+  return String(props.getProperty('ADMIN_PASSWORD') || props.getProperty('PLANNER_PASSWORD') || '').trim();
+}
 
 function respond(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);

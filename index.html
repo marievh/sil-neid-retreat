@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>NEID Global Retreat · Breakout planning</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23F4552A'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@600;700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap" rel="stylesheet">
@@ -77,6 +78,21 @@ main{padding:20px clamp(16px,4vw,40px) 60px}
 .star[aria-pressed="true"]{color:var(--orange)}
 .pen{border:0;background:transparent;cursor:pointer;color:var(--muted);font-size:12px;font-weight:700;padding:4px;text-decoration:underline}
 .sortable-ghost{opacity:.35}
+.details{display:block;margin-top:8px;padding:8px 10px;background:var(--blush);border-radius:3px;font-size:12.5px;line-height:1.45}
+.details .dl{display:block;font-weight:700;color:var(--deep);margin-top:6px}
+.details .dl:first-child{margin-top:0}
+.details .para{display:block;white-space:pre-line}
+.tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.tagchip{border:1px solid var(--teal);background:transparent;color:var(--teal);border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:700;cursor:pointer}
+.tagchip[aria-pressed="true"]{background:var(--teal);color:#fff}
+.tagbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 16px}
+.tagbar .lbl{font-weight:700;font-size:13.5px;margin-right:4px}
+.tagbar .tagchip{font-size:12.5px;padding:3px 10px}
+.tagbar .tagchip small{font-weight:600;opacity:.75}
+.switch{border:1.5px solid var(--line);border-radius:999px;padding:5px 12px;background:transparent;cursor:pointer;font-weight:700}
+.switch[aria-pressed="true"]{background:var(--teal);border-color:var(--teal);color:#fff}
+.hintline{font-size:13.5px;color:var(--muted);margin:6px 0 0}
+.errline{color:#B3261E;font-size:13.5px;min-height:1.4em;margin:8px 0 0}
 
 dialog{border:0;border-radius:6px;padding:0;max-width:min(560px,calc(100vw - 32px));width:100%;background:var(--bg);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.35)}
 dialog::backdrop{background:rgba(11,52,65,.55)}
@@ -102,13 +118,14 @@ dialog::backdrop{background:rgba(11,52,65,.55)}
 <div id="app">
   <header class="top">
     <div><small>NEID Global Retreat</small><h1>Breakout planning</h1></div>
-    <div class="status"><span id="saveStatus" aria-live="polite"></span></div>
+    <div class="status"><span id="saveStatus" aria-live="polite"></span><span id="planner"></span></div>
   </header>
   <nav class="bar" aria-label="Breakout slots">
     <div class="tabs" role="tablist" id="tabs"></div>
     <input class="search" id="search" type="search" placeholder="Search names, orgs, focus areas" aria-label="Find a person, organization, or focus area">
   </nav>
   <main>
+    <div class="tagbar" id="tagbar" hidden></div>
     <p class="loading" id="loading">Loading the board… this can take a few seconds the first time.</p>
     <div class="board">
       <section class="col pool" aria-labelledby="poolH">
@@ -121,6 +138,13 @@ dialog::backdrop{background:rgba(11,52,65,.55)}
 </div>
 
 <dialog id="personDlg"><form class="dlg" id="personForm"></form></dialog>
+<dialog id="planDlg"><form class="dlg" id="planForm">
+  <h3>Admin details</h3>
+  <p class="hintline">Interview takeaways are for admins only. Enter the admin password to see them.</p>
+  <label for="planPw">Admin password</label><input id="planPw" type="password" autocomplete="current-password" required>
+  <p class="errline" id="planErr" role="alert"></p>
+  <div class="row"><button type="button" class="btn quiet" data-close>Cancel</button><button type="submit" class="btn solid" id="planGo">Show details</button></div>
+</form></dialog>
 <dialog id="sessionDlg"><form class="dlg" id="sessionForm"></form></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -128,10 +152,15 @@ dialog::backdrop{background:rgba(11,52,65,.55)}
 <script>
 /* ---------- Config ----------
    Paste your Apps Script web app URL (ends in /exec) between the quotes.
-   There's no sign-in for now: anyone with the site link can view and edit. */
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbyZS0uhxg17gbubJ9p95dPxcfoTWJuuvjQeFa5nheCUlQ3PlTU45RrE_lywP90qM6kE/exec", REFRESH_SECONDS: 30 };
+   The board needs no sign-in. Interview details need the admin password,
+   which lives in Apps Script (Script Properties), never in this file. */
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbyOLTmLxS4Dg1-HI7ot2e5oKh38WYtxrgSgp6OgfaqH9xbJw8CI_BP7ONZmswUu-vHn/exec", REFRESH_SECONDS: 30, DEMO_PASSWORD: "" };
+const DEMO_PROFILES = null;   // preview only; the live site gets profiles from Apps Script
 const SEED = null;
-const CACHE_KEY = "neid-breakouts-cache";
+const CACHE_KEY = "neid-breakouts-cache", PLAN_KEY = "neid-planner-pw";
+let profiles = null, showDetails = true, activeTag = "";
+const getPlanPw = () => { try { return localStorage.getItem(PLAN_KEY) || ""; } catch(e){ return ""; } };
+const setPlanPw = v => { try { v ? localStorage.setItem(PLAN_KEY, v) : localStorage.removeItem(PLAN_KEY); } catch(e){} };
 const getCache = () => { try { return JSON.parse(localStorage.getItem(CACHE_KEY)); } catch(e){ return null; } };
 const setCache = s => { try { s ? localStorage.setItem(CACHE_KEY, JSON.stringify(s)) : localStorage.removeItem(CACHE_KEY); } catch(e){} };
 
@@ -160,6 +189,31 @@ const LOAD_ERROR = {
   unreachable: "Couldn't reach the Google Sheet. Check that API_URL in index.html is the web app URL ending in /exec, and that the Apps Script deployment's access is set to \"Anyone\".",
   not_json: "The Google Sheet didn't answer as expected. In Apps Script, check that you deployed a new version after the last code change."
 };
+const PLAN_ERRORS = {
+  bad_password: "That password didn't match. Check for typos and try again.",
+  no_password_set: "No admin password is set yet. In Apps Script, add ADMIN_PASSWORD under Project Settings > Script Properties.",
+  unreachable: "Couldn't reach the Google Sheet. Check your connection and try again.",
+  not_json: "The Google Sheet didn't answer as expected. In Apps Script, deploy a new version of the script."
+};
+async function fetchProfiles(pw){
+  if (!CONFIG.API_URL) return (CONFIG.DEMO_PASSWORD && pw===CONFIG.DEMO_PASSWORD && DEMO_PROFILES) ? {ok:true, profiles: DEMO_PROFILES} : {ok:false, error:"bad_password"};
+  return call({action:"profiles", password: pw});
+}
+async function unlock(pw){
+  const j = await fetchProfiles(pw.trim());
+  if (!j.ok) return j;
+  setPlanPw(pw.trim()); profiles = j.profiles; showDetails = true; render(); return j;
+}
+function lock(){ setPlanPw(""); profiles = null; activeTag = ""; render(); }
+function openPlanner(){ $("#planPw").value=""; $("#planErr").textContent=""; $("#planDlg").showModal(); }
+$("#planForm").addEventListener("submit", async e=>{
+  e.preventDefault();
+  $("#planGo").disabled = true; $("#planErr").textContent = "Checking…";
+  const j = await unlock($("#planPw").value);
+  $("#planGo").disabled = false;
+  if (!j.ok){ $("#planErr").textContent = PLAN_ERRORS[j.error] || "Something went wrong. Try again."; return; }
+  $("#planDlg").close(); toast("Interview details are showing");
+});
 function save(){
   if (!CONFIG.API_URL) { setCache(state); return; }
   inFlight++; setStatus("Saving…");
@@ -174,7 +228,13 @@ function save(){
 async function refresh(){
   if (!CONFIG.API_URL || !state || document.hidden || dragging || inFlight || document.querySelector("dialog[open]")) return;
   const j = await call({action:"load"});
-  if (j.ok && j.state.rev !== state.rev){ state = j.state; setCache(state); render(); }
+  let changed = false;
+  if (j.ok && j.state.rev !== state.rev){ state = j.state; setCache(state); changed = true; }
+  if (profiles && getPlanPw() && CONFIG.API_URL){
+    const pj = await fetchProfiles(getPlanPw());
+    if (pj.ok && JSON.stringify(pj.profiles) !== JSON.stringify(profiles)){ profiles = pj.profiles; changed = true; }
+  }
+  if (changed && !document.querySelector("dialog[open]")) render();
 }
 
 function showApp(s){
@@ -195,12 +255,20 @@ function focusHTML(text){
   if (lines.length===1 && !/^\s*[-*•]/.test(text)) return `<span class="focus"><b>Focus areas</b>${esc(lines[0])}</span>`;
   return `<span class="focus"><b>Focus areas</b>${lines.map(l=>`<span class="fi">${esc(l)}</span>`).join("")}</span>`;
 }
+function detailsHTML(pr){
+  const part = (label, text) => text ? `<span class="dl">${label}</span><span class="para">${esc(text)}</span>` : "";
+  return `<span class="details">${part("Interviewee characteristics", pr.chars)}${part("Focus 1", pr.f1)}${part("Focus 2", pr.f2)}${part("Focus 3", pr.f3)}${part("Strong view", pr.view)}
+    ${pr.tags.length?`<span class="tags">${pr.tags.map(tg=>`<button type="button" class="tagchip" data-tag="${esc(tg)}" aria-pressed="${tg===activeTag}">${esc(tg)}</button>`).join("")}</span>`:""}</span>`;
+}
 function card(p, a, inSession){
-  const hit = query && [p.name,p.org,p.title,p.focus].join(" ").toLowerCase().includes(query);
+  const pr = profiles && profiles[p.id];
+  const qHit = !query || [p.name,p.org,p.title,p.focus, pr?[pr.chars,pr.f1,pr.f2,pr.f3,pr.view,pr.tags.join(" ")].join(" "):""].join(" ").toLowerCase().includes(query);
+  const tHit = !activeTag || (pr && pr.tags.includes(activeTag));
+  const filtering = query || activeTag, hit = qHit && tHit;
   const sub = [p.title, p.org].filter(Boolean).join(", ");
-  return `<li data-id="${p.id}"><div class="card ${query?(hit?"hit":"dim"):""}">
+  return `<li data-id="${p.id}"><div class="card ${filtering?(hit?"hit":"dim"):""}">
     <span class="av" aria-hidden="true">${esc(initials(p.name))}</span>
-    <span class="who"><b>${esc(p.name)}</b>${sub?`<span class="org">${esc(sub)}</span>`:""}${a?.f?'<span class="fac">Facilitator</span>':""}${p.bio?`<span class="bio">${esc(p.bio)}</span>`:""}${focusHTML(p.focus)}</span>
+    <span class="who"><b>${esc(p.name)}</b>${sub?`<span class="org">${esc(sub)}</span>`:""}${a?.f?'<span class="fac">Facilitator</span>':""}${p.bio?`<span class="bio">${esc(p.bio)}</span>`:""}${focusHTML(p.focus)}${pr && showDetails ? detailsHTML(pr) : ""}</span>
     <span class="tools">${inSession?`<button type="button" class="star" data-star="${p.id}" aria-pressed="${!!a?.f}" aria-label="Mark ${esc(p.name)} as facilitator">${a?.f?"★":"☆"}</button>`:""}
     <button type="button" class="pen" data-person="${p.id}" aria-label="Edit ${esc(p.name)}">Edit</button></span></div></li>`;
 }
@@ -208,6 +276,16 @@ function render(){
   if (!state) return;
   const R = curRound(); if (!R) { $("#sessions").innerHTML = "<p>No breakout slots yet. Add one in the Slots tab of the Google Sheet.</p>"; return; }
   round = R.id;
+  $("#planner").innerHTML = profiles
+    ? `<button type="button" class="switch" id="detBtn" aria-pressed="${showDetails}">Interview details: ${showDetails?"On":"Off"}</button> <button type="button" class="btn quiet" id="lockBtn">Hide and lock</button>`
+    : `<button type="button" class="btn quiet" id="planBtn">Admin details</button>`;
+  if (profiles && showDetails){
+    const counts = {}; Object.values(profiles).forEach(pr=>pr.tags.forEach(tg=>counts[tg]=(counts[tg]||0)+1));
+    const tags = Object.keys(counts).sort((a,b)=>counts[b]-counts[a] || a.localeCompare(b));
+    $("#tagbar").hidden = false;
+    $("#tagbar").innerHTML = `<span class="lbl">Highlight by issue:</span>` + tags.map(tg=>`<button type="button" class="tagchip" data-tag="${esc(tg)}" aria-pressed="${tg===activeTag}">${esc(tg)} <small>${counts[tg]}</small></button>`).join("")
+      + (activeTag?` <button type="button" class="btn quiet" id="clearTag" style="padding:3px 12px;font-size:13px">Clear</button>`:"");
+  } else { $("#tagbar").hidden = true; }
   const asg = state.assign[R.id] || (state.assign[R.id] = {});
   // Named by position, so they stay in order even if the agenda times move.
   $("#tabs").innerHTML = state.rounds.map((r,i)=>{ const n = unplaced(r).length;
@@ -229,7 +307,7 @@ function bindDrag(){
   sortables.forEach(s=>s.destroy()); sortables = [];
   if (!window.Sortable) return;
   document.querySelectorAll(".list").forEach(el=> sortables.push(Sortable.create(el, {
-    group:"people", animation:150, draggable:"li[data-id]", filter:".star,.pen", preventOnFilter:false,
+    group:"people", animation:150, draggable:"li[data-id]", filter:".star,.pen,.tagchip", preventOnFilter:false,
     delay:120, delayOnTouchOnly:true, ghostClass:"sortable-ghost",
     onStart(){ dragging = true; },
     onEnd(evt){ dragging = false;
@@ -244,6 +322,30 @@ function bindDrag(){
 
 /* ---------- Edit dialogs ---------- */
 const cancelBtn = `<button type="button" class="btn quiet" data-close>Cancel</button>`;
+const EMPTY_PROFILE = {chars:"", f1:"", f2:"", f3:"", view:"", tags:[]};
+const PROFILE_FIELDS = [["chars","pChars","Interviewee characteristics",60],["f1","pF1","Focus 1",60],["f2","pF2","Focus 2",70],["f3","pF3","Focus 3",70],["view","pView","Strong view",70]];
+function plannerFields(pr){
+  pr = Object.assign({}, EMPTY_PROFILE, pr || {});
+  return `<div class="details" style="margin-top:18px;padding:12px 14px">
+    <span class="dl" style="font-size:14px">Admin details (admins only)</span>
+    ${PROFILE_FIELDS.map(([k,id,label,h])=>`<label for="${id}">${label}</label><textarea id="${id}" style="min-height:${h}px">${esc(pr[k])}</textarea>`).join("")}
+    <label for="pTags">Issue tags</label><input id="pTags" value="${esc(pr.tags.join("; "))}">
+    <p class="hint">Separate tags with semicolons, for example: Collaboration; Scale; Locally led</p></div>`;
+}
+async function saveProfile(p){
+  const next = {tags: $("#pTags").value.split(/[;\n]/).map(x=>x.trim()).filter(Boolean)};
+  PROFILE_FIELDS.forEach(([k,id])=>{ next[k] = $("#"+id).value.trim(); });
+  const prev = Object.assign({}, EMPTY_PROFILE, profiles[p.id] || {});
+  const same = PROFILE_FIELDS.every(([k])=>(prev[k]||"")===next[k]) && JSON.stringify(prev.tags||[])===JSON.stringify(next.tags);
+  if (same) return;
+  profiles[p.id] = next; render();
+  if (!CONFIG.API_URL) return;   // preview: kept in this page only
+  setStatus("Saving…");
+  const j = await call({action:"saveProfile", password:getPlanPw(), person_id:p.id, person_name:p.name, profile:next});
+  if (j.ok) setStatus("All changes saved");
+  else if (j.error==="bad_password"){ lock(); toast("The admin password changed. Open Admin details to sign in again."); }
+  else { setStatus("Not saved"); toast("Couldn't save the admin details. Try again."); }
+}
 function openPerson(id){
   const p = byId(id);
   $("#personForm").innerHTML = `<h3>Edit ${esc(p.name)}</h3>
@@ -253,9 +355,12 @@ function openPerson(id){
     <label for="fBio">Short bio</label><textarea id="fBio">${esc(p.bio)}</textarea>
     <label for="fFocus">Focus areas</label><textarea id="fFocus" style="min-height:90px" placeholder="- Interested in independent funding&#10;- Women and girls&#10;- Haiti, but open to expanding in Latin America">${esc(p.focus||"")}</textarea>
     <p class="hint">Put each focus area on its own line to show them as bullet points.</p>
+    ${profiles ? plannerFields(profiles[p.id]) : ""}
     <div class="row">${cancelBtn}<button type="submit" class="btn solid">Save changes</button></div>`;
   $("#personForm").onsubmit = e=>{ e.preventDefault();
     p.name = $("#fName").value.trim() || p.name; p.title = $("#fTitle").value.trim(); p.org = $("#fOrg").value.trim(); p.bio = $("#fBio").value.trim(); p.focus = $("#fFocus").value.trim();
+    const hadPlanner = profiles && $("#pChars");
+    if (hadPlanner) saveProfile(p);
     $("#personDlg").close(); render(); save(); };
   $("#personDlg").showModal();
 }
@@ -282,6 +387,11 @@ function openSession(sid){
 document.addEventListener("click", e=>{
   const t = e.target;
   if (t.closest("[data-close]")) { t.closest("dialog").close(); return; }
+  if (t.closest("#planBtn")) { openPlanner(); return; }
+  if (t.closest("#lockBtn")) { lock(); toast("Interview details hidden"); return; }
+  if (t.closest("#detBtn")) { showDetails = !showDetails; if (!showDetails) activeTag = ""; render(); return; }
+  if (t.closest("#clearTag")) { activeTag = ""; render(); return; }
+  const tg = t.closest("[data-tag]"); if (tg){ activeTag = activeTag===tg.dataset.tag ? "" : tg.dataset.tag; render(); return; }
   const tab = t.closest("[data-round]"); if (tab){ round = tab.dataset.round; render(); return; }
   const st = t.closest("[data-star]"); if (st){ const a = state.assign[round][st.dataset.star]; if (a){ a.f = !a.f; render(); save(); } return; }
   const pe = t.closest("[data-person]"); if (pe){ openPerson(pe.dataset.person); return; }
@@ -298,6 +408,7 @@ $("#search").oninput = e=>{ query = e.target.value.trim().toLowerCase(); render(
   if (j.ok){ showApp(j.state); setStatus(""); }
   else if (cached){ setStatus("Offline: showing the last saved version"); }
   else { $("#loading").textContent = LOAD_ERROR[j.error] || "Couldn't load the board. Refresh the page to try again."; }
+  if (state && getPlanPw()){ const r = await unlock(getPlanPw()); if (!r.ok && r.error==="bad_password") setPlanPw(""); }
   if (CONFIG.API_URL) setInterval(refresh, CONFIG.REFRESH_SECONDS*1000);
 })();
 </script>
