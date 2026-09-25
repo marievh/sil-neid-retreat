@@ -54,7 +54,10 @@ main{padding:20px clamp(16px,4vw,40px) 60px}
 .col{background:var(--col);border:1px solid var(--line);border-radius:4px;display:flex;flex-direction:column;min-width:0}
 .col.pool{background:var(--panel);position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
 .col-head{padding:14px 14px 10px;border-top:6px solid var(--stripe,var(--teal));border-radius:4px 4px 0 0}
-.col-head h2{margin:0;font:700 19px/1.2 var(--display)}
+.col-head h2{margin:0;font:700 19px/1.2 var(--display);padding-right:28px}
+.col:not(.pool) .col-head{position:relative;cursor:grab}
+.grip{position:absolute;top:12px;right:12px;font-size:18px;line-height:1;color:var(--muted);letter-spacing:-2px;user-select:none}
+.sessions .sortable-ghost{opacity:.4}
 .col-head p{margin:6px 0 0;font-size:13.5px;color:var(--muted)}
 .col-head .btn{margin-top:8px;font-size:13px;padding:4px 12px}
 .list{list-style:none;margin:0;padding:6px 10px 12px;display:flex;flex-direction:column;gap:6px;min-height:64px;flex:1}
@@ -140,7 +143,6 @@ dialog::backdrop{background:rgba(11,52,65,.55)}
 <dialog id="personDlg"><form class="dlg" id="personForm"></form></dialog>
 <dialog id="planDlg"><form class="dlg" id="planForm">
   <h3>Admin view</h3>
-  <p class="hintline"></p>
   <label for="planPw">Password</label><input id="planPw" type="password" autocomplete="current-password" required>
   <p class="errline" id="planErr" role="alert"></p>
   <div class="row"><button type="button" class="btn quiet" data-close>Cancel</button><button type="submit" class="btn solid" id="planGo">Login as Admin</button></div>
@@ -175,10 +177,12 @@ function setStatus(t){ $("#saveStatus").textContent = t; }
 /* ---------- Talking to the Google Sheet ---------- */
 // Requests are POSTs sent as text/plain, which avoids a CORS preflight.
 async function call(body){
+  const ctrl = new AbortController(), timer = setTimeout(()=>ctrl.abort(), 25000);   // give up after 25 seconds
   let r;
-  try { r = await fetch(CONFIG.API_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify(body)}); }
-  catch(e){ return {ok:false, error:"unreachable"}; }
-  try { return await r.json(); } catch(e){ return {ok:false, error:"not_json"}; }
+  try { r = await fetch(CONFIG.API_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify(body), signal: ctrl.signal}); }
+  catch(e){ clearTimeout(timer); return {ok:false, error: e.name==="AbortError" ? "timeout" : "unreachable"}; }
+  try { return await r.json(); } catch(e){ return {ok:false, error: e.name==="AbortError" ? "timeout" : "not_json"}; }
+  finally { clearTimeout(timer); }
 }
 async function fetchState(){
   if (!CONFIG.API_URL) return SEED ? {ok:true, state: structuredClone(SEED)} : {ok:false, error:"no_url"};
@@ -187,13 +191,15 @@ async function fetchState(){
 const LOAD_ERROR = {
   no_url: "This page isn't connected to the Google Sheet yet. Paste the Apps Script web app URL into API_URL in index.html.",
   unreachable: "Couldn't reach the Google Sheet. Check that API_URL in index.html is the web app URL ending in /exec, and that the Apps Script deployment's access is set to \"Anyone\".",
-  not_json: "The Google Sheet didn't answer as expected. In Apps Script, check that you deployed a new version after the last code change."
+  not_json: "The Google Sheet didn't answer as expected. In Apps Script, check that you deployed a new version after the last code change.",
+  timeout: "The Google Sheet took too long to respond. Refresh the page to try again."
 };
 const PLAN_ERRORS = {
   bad_password: "That password didn't match. Check for typos and try again.",
   no_password_set: "No admin password is set yet. In Apps Script, add ADMIN_PASSWORD under Project Settings > Script Properties.",
   unreachable: "Couldn't reach the Google Sheet. Check your connection and try again.",
-  not_json: "The Google Sheet didn't answer as expected. In Apps Script, deploy a new version of the script."
+  not_json: "The Google Sheet didn't answer as expected. In Apps Script, deploy a new version of the script.",
+  timeout: "The Google Sheet took too long to respond. Try again in a minute."
 };
 async function fetchProfiles(pw){
   if (!CONFIG.API_URL) return (CONFIG.DEMO_PASSWORD && pw===CONFIG.DEMO_PASSWORD && DEMO_PROFILES) ? {ok:true, profiles: DEMO_PROFILES} : {ok:false, error:"bad_password"};
@@ -212,7 +218,7 @@ $("#planForm").addEventListener("submit", async e=>{
   const j = await unlock($("#planPw").value);
   $("#planGo").disabled = false;
   if (!j.ok){ $("#planErr").textContent = PLAN_ERRORS[j.error] || "Something went wrong. Try again."; return; }
-  $("#planDlg").close(); toast("Logged in to admin view");
+  $("#planDlg").close(); toast("Interview details are showing");
 });
 function save(){
   if (!CONFIG.API_URL) { setCache(state); return; }
@@ -296,16 +302,30 @@ function render(){
   $("#poolSub").textContent = pool.length ? "Drag people into a breakout." : "";
   $("#sessions").innerHTML = R.sessions.map((s,i)=>{
     const ppl = sortPeople(state.people.filter(p=>asg[p.id]?.s===s.id), asg);
-    return `<section class="col" aria-labelledby="h-${s.id}"><div class="col-head" style="--stripe:${STRIPES[i%STRIPES.length]}">
+    return `<section class="col" data-sid="${s.id}" aria-labelledby="h-${s.id}"><div class="col-head" style="--stripe:${STRIPES[i%STRIPES.length]}" title="Drag the header to reorder sessions"><span class="grip" aria-hidden="true">⋮⋮</span>
       <h2 id="h-${s.id}">${esc(s.title)}</h2>${s.desc?`<p>${esc(s.desc)}</p>`:""}
       <button type="button" class="btn quiet" data-session-edit="${s.id}">Edit session</button></div>
       <ul class="list" data-session="${s.id}">${ppl.map(p=>card(p,asg[p.id],true)).join("")}</ul></section>`;
   }).join("") + `<button type="button" class="add-col" id="addSession">+ Add a session</button>`;
   bindDrag();
 }
+// Put this slot's sessions in the order given (a list of session ids), then save.
+function reorderSessions(ids){
+  const R = curRound(), byIdS = Object.fromEntries(R.sessions.map(s=>[s.id,s]));
+  const next = ids.map(id=>byIdS[id]).filter(Boolean);
+  if (next.length !== R.sessions.length || next.every((s,i)=>s===R.sessions[i])) { render(); return; }
+  R.sessions = next; render(); save(); toast("Session order saved");
+}
 function bindDrag(){
   sortables.forEach(s=>s.destroy()); sortables = [];
   if (!window.Sortable) return;
+  // Sessions: drag a session by its header to reorder it within this slot.
+  sortables.push(Sortable.create($("#sessions"), {
+    draggable:"section.col", handle:".col-head", filter:".btn", preventOnFilter:false,
+    animation:150, delay:120, delayOnTouchOnly:true,
+    onStart(){ dragging = true; },
+    onEnd(){ dragging = false; reorderSessions([...$("#sessions").querySelectorAll("section.col")].map(el=>el.dataset.sid)); }
+  }));
   document.querySelectorAll(".list").forEach(el=> sortables.push(Sortable.create(el, {
     group:"people", animation:150, draggable:"li[data-id]", filter:".star,.pen,.tagchip", preventOnFilter:false,
     delay:120, delayOnTouchOnly:true, ghostClass:"sortable-ghost",
@@ -343,7 +363,7 @@ async function saveProfile(p){
   setStatus("Saving…");
   const j = await call({action:"saveProfile", password:getPlanPw(), person_id:p.id, person_name:p.name, profile:next});
   if (j.ok) setStatus("All changes saved");
-  else if (j.error==="bad_password"){ lock(); toast("The admin password changed. Open Admin view to sign in again."); }
+  else if (j.error==="bad_password"){ lock(); toast("The admin password changed. Open Admin View to sign in again."); }
   else { setStatus("Not saved"); toast("Couldn't save the admin view. Try again."); }
 }
 function openPerson(id){
