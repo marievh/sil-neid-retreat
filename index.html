@@ -11,13 +11,13 @@
 <style>
 :root{
   --orange:#F4552A; --teal:#007C7C; --deep:#0B3441; --yellow:#E4D22E;
-  --bg:#FFFFFF; --panel:#F7EAE5; --card:#FFFFFF; --ink:#16282E; --muted:#56676C; --line:#E3D3CC; --col:#FBF5F2; --focus:#0B3441; --blush:#F7EAE5;
+  --bg:#FFFFFF; --panel:#F7EAE5; --card:#FFFFFF; --ink:#16282E; --muted:#56676C; --line:#E3D3CC; --col:#FBF5F2; --focus:#0B3441; --blush:#F7EAE5; --pool:#DDF0EF; --poolline:#6FB3B3;
   --display:"Josefin Sans","Avenir Next","Century Gothic",system-ui,sans-serif;
   --body:"Nunito Sans","Avenir","Segoe UI",system-ui,sans-serif;
   box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --bg:#0A242D; --panel:#0F313C; --card:#123B47; --ink:#EEF3F2; --muted:#A9BCC0; --line:#24505C; --col:#0D2C36; --focus:#E4D22E; --blush:#2A3F45; }}
-:root[data-theme="dark"]{ --bg:#0A242D; --panel:#0F313C; --card:#123B47; --ink:#EEF3F2; --muted:#A9BCC0; --line:#24505C; --col:#0D2C36; --focus:#E4D22E; --blush:#2A3F45; }
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --bg:#0A242D; --panel:#0F313C; --card:#123B47; --ink:#EEF3F2; --muted:#A9BCC0; --line:#24505C; --col:#0D2C36; --focus:#E4D22E; --blush:#2A3F45; --pool:#0E3D40; --poolline:#2F8080; }}
+:root[data-theme="dark"]{ --bg:#0A242D; --panel:#0F313C; --card:#123B47; --ink:#EEF3F2; --muted:#A9BCC0; --line:#24505C; --col:#0D2C36; --focus:#E4D22E; --blush:#2A3F45; --pool:#0E3D40; --poolline:#2F8080; }
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *,*::before,*::after{box-sizing:inherit}
 [hidden]{display:none!important}
@@ -52,7 +52,7 @@ main{padding:20px clamp(16px,4vw,40px) 60px}
 .board{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:20px;align-items:start}
 .sessions{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
 .col{background:var(--col);border:1px solid var(--line);border-radius:4px;display:flex;flex-direction:column;min-width:0}
-.col.pool{background:var(--panel);position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+.col.pool{background:var(--pool);border:2px dashed var(--poolline);position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
 .col-head{padding:14px 14px 10px;border-top:6px solid var(--stripe,var(--teal));border-radius:4px 4px 0 0}
 .col-head h2{margin:0;font:700 19px/1.2 var(--display);padding-right:28px}
 .col:not(.pool) .col-head{position:relative;cursor:grab}
@@ -132,7 +132,7 @@ dialog::backdrop{background:rgba(11,52,65,.55)}
     <p class="loading" id="loading">Loading the board… this can take a few seconds the first time.</p>
     <div class="board">
       <section class="col pool" aria-labelledby="poolH">
-        <div class="col-head" style="--stripe:var(--yellow)"><h2 id="poolH">Not yet placed</h2><p id="poolSub"></p></div>
+        <div class="col-head" style="--stripe:var(--teal)"><h2 id="poolH">Not yet placed</h2><p id="poolSub"></p></div>
         <ul class="list" id="pool" data-session=""></ul>
       </section>
       <div class="sessions" id="sessions"></div>
@@ -166,7 +166,7 @@ const setPlanPw = v => { try { v ? localStorage.setItem(PLAN_KEY, v) : localStor
 const getCache = () => { try { return JSON.parse(localStorage.getItem(CACHE_KEY)); } catch(e){ return null; } };
 const setCache = s => { try { s ? localStorage.setItem(CACHE_KEY, JSON.stringify(s)) : localStorage.removeItem(CACHE_KEY); } catch(e){} };
 
-const STRIPES = ["var(--orange)","var(--teal)","var(--yellow)","var(--deep)"];
+const STRIPES = ["var(--orange)"];
 let state = null, round = null, query = "", sortables = [], dragging = false, inFlight = 0, saving = Promise.resolve();
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
