@@ -14,13 +14,14 @@
  *
  * Tabs: Settings, Days, Agenda, Slots, Sessions, People, Assignments, Profiles.
  * The site never edits Days, Agenda, or Settings; change those in the Sheet.
+ * Settings holds only the revision number, which the script manages.
  */
 
 const TABS = {
   Settings:    ['key', 'value'],
   Days:        ['day_id', 'label', 'short_label', 'guiding_question'],
   Agenda:      ['day_id', 'item_id', 'start', 'end', 'title', 'description', 'room', 'led_by', 'kind', 'breakout_slot'],
-  Slots:       ['slot_id', 'label', 'note'],
+  Slots:       ['slot_id'],
   Sessions:    ['slot_id', 'session_id', 'title', 'description'],
   People:      ['person_id', 'name', 'title', 'organization', 'bio', 'focus_areas'],
   Assignments: ['slot_id', 'person_id', 'person_name', 'session_id', 'facilitator'],
@@ -213,7 +214,7 @@ function readState() {
     id: r.person_id, name: r.name, title: r.title, org: r.organization, bio: r.bio, focus: r.focus_areas || '' }));
   const sessions = table('Sessions', 'session_id', 's');
   const rounds = table('Slots', 'slot_id', 'r').map(sl => ({
-    id: sl.slot_id, label: sl.label || '', note: sl.note || '',
+    id: sl.slot_id,
     sessions: sessions.filter(x => x.slot_id === sl.slot_id).map(x => ({ id: x.session_id, title: x.title, desc: x.description }))
   }));
   const assign = {};
@@ -231,7 +232,6 @@ function readState() {
   }));
   return {
     people, rounds, assign, agenda,
-    event: { name: set.event_name || '', subtitle: set.subtitle || '', dates: set.dates || '', note: set.note || '' },
     rev: Number(set.revision || 0)
   };
 }
@@ -251,7 +251,7 @@ function writeTable(name, rows) {
 function writeState(s) {
   const names = {};
   (s.people || []).forEach(p => { names[p.id] = p.name; });
-  writeTable('Slots', (s.rounds || []).map(r => ({ slot_id: r.id, label: r.label, note: r.note })));
+  writeTable('Slots', (s.rounds || []).map(r => ({ slot_id: r.id })));
   writeTable('Sessions', [].concat(...(s.rounds || []).map(r => (r.sessions || []).map(x => ({
     slot_id: r.id, session_id: x.id, title: x.title, description: x.desc })))));
   writeTable('People', (s.people || []).map(p => ({

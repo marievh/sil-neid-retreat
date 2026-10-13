@@ -56,6 +56,8 @@ update scripts (such as `V2Update.gs`) here.**
 - **Changing the Apps Script code:** Deploy > Manage deployments > Edit (pencil) >
   Version: New version > Deploy. Until you do this, the old code keeps running.
 - **After any update:** ask people to do a hard refresh (Cmd+Shift+R or Ctrl+Shift+R).
+- **Tabs in the Sheet:** Settings (just the revision number), Days, Agenda, Slots,
+  Sessions, People, Assignments, and Profiles. Any other tab is ignored by the site.
 - **Tabs the script rewrites on save:** Slots, Sessions, People, and Assignments. Extra columns
   added to those tabs are removed. Days, Agenda, Settings, and Profiles are never rewritten
   by the site.
