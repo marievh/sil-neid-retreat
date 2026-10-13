@@ -434,11 +434,11 @@ function demoCall(body){
   return {ok:false, error:"unknown_action"};
 }
 const ERRORS = {
-  bad_code: "That code didn't match. Check your invitation email and try again.",
+  bad_code: "That code didn't match our records. Please check the code and try again.",
   no_password_set: "The site isn't set up yet: no codes are set in Apps Script (Script Properties).",
   no_url: "This page isn't connected to the Google Sheet yet. Paste the Apps Script web app URL into API_URL in index.html.",
   unreachable: "Couldn't reach the server. Check your connection and try again.",
-  timeout: "The server took too long to respond. Try again in a minute.",
+  timeout: "The server took too long to respond. Please try again in a minute.",
   not_json: "The server didn't answer as expected. If you just updated the site, do a hard refresh (Cmd+Shift+R or Ctrl+Shift+R)."
 };
 
@@ -604,7 +604,7 @@ function findHTML(){
   return `<div class="findwrap"><div class="find"><label for="findIn" class="hi">Your agenda</label>
     <p class="lbl2">Enter your name to view your personalized agenda.</p>
     <input id="findIn" type="search" autocomplete="off" placeholder="Start typing your name" value="${esc(findText)}">
-    <div class="matches">${q && !matches.length ? `<p class="lbl2">No match yet. Try your first or last name.</p>` : matches.map(p=>`<button type="button" class="match" data-me="${p.id}"><b>${esc(p.name)}</b>${p.org?`<span>${esc(p.org)}</span>`:""}</button>`).join("")}</div></div></div>`;
+    <div class="matches">${q && !matches.length ? `<p class="lbl2">No match yet. Try your first or last name.</p>` : matches.map(p=>`<button type="button" class="match" data-me="${p.id}"><b>${esc(p.name)}</b>${(p.org||p.title)?`<span>${esc(p.org||p.title)}</span>`:""}</button>`).join("")}</div></div></div>`;
 }
 function groupCard(r, s, asg, isMine){
   const ppl = sortPeople(state.people.filter(p=>asg[p.id]?.s===s.id), asg);
