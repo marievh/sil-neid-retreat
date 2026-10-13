@@ -1,126 +1,63 @@
-# NEID Global Retreat: breakout planning
+# NEID Global Retreat: agenda site (version 2)
 
-A small website for planning breakout sessions at the NEID Global Retreat
-(October 19–21, 2026). Drag people between sessions, mark facilitators, and edit
-bios, focus areas, and sessions. Admins can also see and edit takeaways from the
-participant interviews. Changes save to a shared Google Sheet, so everyone sees the
-same board.
+A mobile-friendly agenda for attendees of the NEID Global Retreat (October 19–21, 2026).
+Attendees find themselves by name and see their breakout groups and Funding Spotlights
+highlighted in gold, right inside the agenda. The planning team (admins) assign people to
+breakout groups and can see bios and interview details.
 
-- **Site:** https://neid-retreat.solutionsinsightslab.org (also reachable at
-  https://marievh.github.io/sil-neid-retreat/, which redirects there)
+- **Site:** https://neid.solutionsinsightslab.org
 - **Front end:** `index.html`, hosted on GitHub Pages.
 - **Data:** a Google Sheet, read and written by the Apps Script in `apps-script/Code.gs`.
+- **Version 1** is saved on the `version-1` branch.
 
 ## Who can see what
 
-- **The board** has no sign-in. Anyone with the site link can view and edit sessions,
-  assignments, bios, and focus areas.
-- **Admin details** (interview takeaways) are for admins only. They load only after
-  someone clicks **Admin details** and enters the admin password. The password is
-  stored in Apps Script (Script Properties as `ADMIN_PASSWORD`), never in this repository.
+| | Attendees (attendee code) | Admins (admin password) |
+|---|---|---|
+| Agenda, "Find yourself," breakout groups (names, titles, organizations) | Yes | Yes |
+| Bios, focus areas, interview details | No | Yes |
+| Assign tabs: drag people into groups, edit sessions and people | No | Yes |
 
-If someone makes an unwanted change, use **File > Version history** in the Google Sheet
-to restore an earlier version.
+Both codes are stored in Apps Script (Script Properties), never in this repository. The
+script checks them on every request: without a valid code it sends no retreat data, and
+only the admin password can save changes. Search engines are asked not to index the site.
 
-This repository holds no attendee data. **Never commit the Sheet data files
-(`NEID_Retreat_Site_Data.xlsx`, `NEID_Profiles_Tab.xlsx`) or one-time update scripts here.**
+**Safety choices:** the site doesn't show the venue, hotel, restaurant, or any addresses.
+Venue and travel details are shared with attendees by email.
 
-## One-time setup
-
-### 1. Create the Google Sheet
-1. Upload `NEID_Retreat_Site_Data.xlsx` to Google Drive.
-2. Open it, then choose **File > Save as Google Sheets**. Work in the new Google Sheets
-   copy and delete the uploaded .xlsx so there's only one version.
-3. Add the interview takeaways: **File > Import > Upload**, choose
-   `NEID_Profiles_Tab.xlsx`, and pick **Insert new sheet(s)**. The new tab must be
-   named exactly **Profiles**.
-4. The app uses six tabs: **Settings, Slots, Sessions, People, Assignments, Profiles**.
-   Other tabs (such as Days and Agenda) are left alone.
-
-### 2. Add the Apps Script
-1. In the Sheet, open **Extensions > Apps Script**.
-2. Replace everything in `Code.gs` with the contents of `apps-script/Code.gs`. Save.
-3. **Project Settings (gear icon) > Script Properties > Add script property**:
-   name `ADMIN_PASSWORD`, value your chosen password. Save.
-4. Choose the `testSetup` function and click **Run**. Approve the permissions prompt.
-   The log should list the people, the two breakout slots, the number of interview
-   profiles matched, and "Admin password set: true."
-
-### 3. Deploy the web app
-1. **Deploy > New deployment**. Click the gear next to "Select type" and choose **Web app**.
-2. Execute as: **Me**. Who has access: **Anyone**.
-   (If "Anyone" isn't offered, your Google Workspace admin settings restrict it.)
-3. Click **Deploy** and copy the **Web app URL** (ends in `/exec`).
-4. To check it, open that URL in a browser tab. You should see
-   "The breakout planning backend is running."
-
-### 4. Connect the site
-1. In `index.html`, find `API_URL: ""` near the top of the script and paste the URL
-   between the quotes.
-2. Commit and push.
-
-### 5. Turn on GitHub Pages
-1. In the repository: **Settings > Pages**.
-2. Source: **Deploy from a branch**, branch **main**, folder **/ (root)**. Save.
-3. The repository must be public to use Pages on a free GitHub plan.
-
-### 6. Custom domain (optional)
-1. In GoDaddy DNS for solutionsinsightslab.org, add a record: type **CNAME**,
-   name **neid-retreat**, value **marievh.github.io**.
-2. In **Settings > Pages**, enter `neid-retreat.solutionsinsightslab.org` as the
-   Custom domain and save. (GitHub commits a `CNAME` file for you.) Tick
-   **Enforce HTTPS** once it's available.
-
-### 7. Check it works
-1. Open the site. The first visit may show "Loading the board…" for a few seconds.
-2. Drag someone into a session. The top right should say "All changes saved," and the
-   Assignments tab in the Sheet should update.
-3. Click **Admin details**, enter the admin password, and confirm the interview
-   details appear on the cards.
+This repository holds no attendee data. **Never commit the Sheet data files or one-time
+update scripts (such as `V2Update.gs`) here.**
 
 ## Everyday use
 
-- **Editing the board:** drag cards between sessions, tap the star to mark a
-  facilitator, and use the Edit buttons on people and sessions. Changes save automatically.
-- **Breakout sessions:** there are two, Breakout Session 1 and Breakout Session 2, named
-  in the order the rows appear in the Slots tab. Each tab shows how many people are
-  still to be assigned.
-- **Focus areas:** shown under each person's bio. Put each focus area on its own line
-  to show them as bullet points. In the Sheet, press Cmd+Enter (Mac) or Ctrl+Enter
-  (Windows) to start a new line in a cell.
-- **Search:** matches names, titles, organizations, and focus areas (and, for admins,
-  the interview details).
-- **Editing in the Sheet:** fine for bulk changes, such as pasting bios into the People
-  tab. Open pages pick up the change within about 30 seconds. To add a person or session
-  in the Sheet, leave the id cell blank and the script fills one in.
-- **Two people editing at once:** if someone else saved in the meantime, your board
-  refreshes and asks you to redo your last change, rather than overwriting theirs.
-- **Speed:** after the first visit, the board opens instantly on that device and then
-  checks for newer changes.
-
-## Admin details
-
-- **Viewing:** click **Admin details** and enter the admin password. Each device
-  remembers it until someone clicks **Hide and lock**. The **Interview details: On/Off**
-  switch collapses the details without locking.
-- **What's shown:** the same columns as the interview analysis: Interviewee
-  characteristics, Focus 1, Focus 2, Focus 3, Strong view, and Issue tags.
-- **Highlight by issue:** click a tag above the board, or on a card, to outline everyone
-  with that tag and fade everyone else. Click it again (or **Clear**) to reset.
-- **Editing:** with admin details showing, click **Edit** on a card. The admin fields
-  are at the bottom of the Edit window. Separate issue tags with semicolons. This also
-  works for people who don't have a profile yet.
-- **In the Sheet:** the Profiles tab holds the same information. When new interviews
-  are done, add a row per person. `person_id` can be left blank; the script matches
-  rows to people by name.
-- **Changing the password:** update `ADMIN_PASSWORD` in Script Properties. No
-  redeploy needed. Admins will be asked to sign in again.
+- **Signing in:** one box for everyone. Attendees enter the attendee code (not
+  case-sensitive); admins enter the admin password. Each device remembers it until someone
+  clicks **Log out**.
+- **Find yourself:** attendees type their name. The "Hi" card lists their breakout groups
+  (and whether they're facilitating) and any Funding Spotlight they're presenting. Gold
+  always means "yours."
+- **Assigning people (admins):** use the **Assign: Session 1** and **Assign: Session 2**
+  tabs. Drag cards from "Not yet placed" into a group, tap the star to mark a facilitator,
+  and drag a group's header to reorder groups.
+- **Interview details (admins):** shown on cards on the Assign tabs. Click an issue tag to
+  highlight everyone with it. Edit them from a person's Edit window.
+- **Changing the agenda:** edit the Days and Agenda tabs in the Sheet.
+  - In the `description` column, lines starting with `-` become bullet points.
+  - A Funding Spotlight line written as `- Talk Title (Presenter Name)` shows the presenter
+    under the title and highlights it for that presenter. The name must match the People
+    tab exactly.
+  - `room` shows under the time. `breakout_slot` (`r1` or `r2`) puts that slot's breakout
+    groups inside the agenda item.
+  - Use title case for agenda and session titles.
+- **Changing a code:** update it in Script Properties. No redeploy needed.
 
 ## Maintenance
 
-- **Changing the Apps Script code:** **Deploy > Manage deployments > Edit (pencil) >
-  Version: New version > Deploy**. The URL stays the same. Until you do this, the old
-  code keeps running.
-- **Tabs the script rewrites:** Slots, Sessions, People, and Assignments are rewritten
-  on every save, so extra columns or notes added to those tabs will be removed. The
-  Profiles tab is only updated one row at a time. Keep notes elsewhere.
+- **Changing the Apps Script code:** Deploy > Manage deployments > Edit (pencil) >
+  Version: New version > Deploy. Until you do this, the old code keeps running.
+- **After any update:** ask people to do a hard refresh (Cmd+Shift+R or Ctrl+Shift+R).
+- **Tabs the script rewrites on save:** Slots, Sessions, People, and Assignments. Extra columns
+  added to those tabs are removed. Days, Agenda, Settings, and Profiles are never rewritten
+  by the site.
+- **Rolling back:** in GitHub, Settings > Pages, switch the branch to `version-1`. Restore the
+  Sheet from File > Version history if needed.
