@@ -593,7 +593,7 @@ function findHTML(){
   if (meP){
     const mine = myBreakouts(), talks = myTalks();
     return `<div class="findwrap"><div class="find found"><p class="hi">Hi, ${esc(firstName(meP.name))}!</p>
-      <p class="lbl2">Your breakout groups</p>
+      <p class="lbl2">Your Breakout Groups</p>
       ${mine.length ? `<div class="mychips">${mine.map(m=>`<button type="button" class="mychip" data-jump="${m.s.id}"><span class="w">${esc(m.when||("Session "+(m.i+1)))}</span><span class="t">${esc(m.s.title)}</span>${m.f?'<span class="you">You\'re facilitating</span>':""}</button>`).join("")}</div>`
         : `<p class="lbl2">Your breakout groups haven't been assigned yet.</p>`}
       ${talks.length ? `<p class="lbl2" style="margin-top:14px">Your Funding Spotlight${talks.length>1?"s":""}</p><div class="mychips">${talks.map(k=>`<button type="button" class="mychip talkchip" data-jumpitem="${k.id}"><span class="w">${esc(k.when)}</span><span class="t">${esc(k.title)}</span><span class="you">You're presenting</span></button>`).join("")}</div>` : ""}
@@ -601,8 +601,8 @@ function findHTML(){
   }
   const q = norm(findText).trim();
   const matches = q ? state.people.filter(p=>norm(p.name).split(/\s+/).some(w=>w.startsWith(q)) || norm(p.name).startsWith(q)).sort((a,b)=>a.name.localeCompare(b.name)).slice(0,6) : [];
-  return `<div class="findwrap"><div class="find"><label for="findIn" class="hi">Find your sessions</label>
-    <p class="lbl2">Enter your name to view your breakout groups.</p>
+  return `<div class="findwrap"><div class="find"><label for="findIn" class="hi">Your agenda</label>
+    <p class="lbl2">Enter your name to view your personalized agenda.</p>
     <input id="findIn" type="search" autocomplete="off" placeholder="Start typing your name" value="${esc(findText)}">
     <div class="matches">${q && !matches.length ? `<p class="lbl2">No match yet. Try your first or last name.</p>` : matches.map(p=>`<button type="button" class="match" data-me="${p.id}"><b>${esc(p.name)}</b>${p.org?`<span>${esc(p.org)}</span>`:""}</button>`).join("")}</div></div></div>`;
 }
@@ -826,7 +826,7 @@ document.addEventListener("click", e=>{
   if (cached && cached.state){ role = cached.role; showApp(cached.state); setStatus("Checking for updates…"); }
   const j = await call({action:"login", code});
   if (j.ok){ role = j.role; showApp(j.state); setStatus(""); if (isAdmin()) loadProfiles(); }
-  else if (j.error === "bad_code"){ signOut(); $("#gateErr").textContent = "The code has changed. Enter the new code from your email."; }
+  else if (j.error === "bad_code"){ signOut(); $("#gateErr").textContent = "The code has changed. Enter the new code provided to you."; }
   else if (cached && cached.state) setStatus("Offline: showing the last saved version");
   else showGate(ERRORS[j.error] || "Something went wrong. Refresh the page to try again.");
   if (CONFIG.API_URL) setInterval(refresh, CONFIG.REFRESH_SECONDS*1000);
