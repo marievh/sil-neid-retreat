@@ -1,26 +1,25 @@
 /**
- * NEID Global Retreat breakout planning: Google Sheets backend.
+ * NEID Global Retreat site, version 2: Google Sheets backend.
  *
  * Bound to the retreat Google Sheet (Extensions > Apps Script).
- * The board has no password: anyone with the site link can view and edit it.
- * Google Sheets version history (File > Version history) can undo unwanted changes.
- *
- * Interview details (the Profiles tab) are for admins only. They're sent only to
- * someone who enters the admin password, set in Project Settings >
- * Script Properties as ADMIN_PASSWORD. Admins can edit them on the site
- * (after entering the password) or directly in the Profiles tab.
  * Deploy as: Web app, Execute as "Me", Who has access "Anyone".
  * After any code change: Deploy > Manage deployments > Edit (pencil) > Version: New version > Deploy.
  *
- * Uses these tabs: Settings, Slots, Sessions, People, Assignments, Profiles.
- * Any other tabs in the Sheet (such as Days and Agenda) are left alone.
+ * Two codes, both set in Project Settings > Script Properties:
+ *   ATTENDEE_CODE   one word shared with attendees. Lets them view the agenda and
+ *                   breakout sessions (names, titles, organizations). Not case-sensitive.
+ *   ADMIN_PASSWORD  for the planning team. Lets them edit the board and see bios,
+ *                   focus areas, and interview details.
+ * Nothing is sent to anyone without one of these codes, and only admins can save.
+ *
+ * Tabs: Settings, Days, Agenda, Slots, Sessions, People, Assignments, Profiles.
+ * The site never edits Days, Agenda, or Settings; change those in the Sheet.
  */
-
-// (Unused: the site names slots Breakout Session 1, 2, ... by their order.)
-const DEFAULT_LABELS = {};
 
 const TABS = {
   Settings:    ['key', 'value'],
+  Days:        ['day_id', 'label', 'short_label', 'guiding_question'],
+  Agenda:      ['day_id', 'item_id', 'start', 'end', 'title', 'description', 'room', 'led_by', 'kind', 'breakout_slot'],
   Slots:       ['slot_id', 'label', 'note'],
   Sessions:    ['slot_id', 'session_id', 'title', 'description'],
   People:      ['person_id', 'name', 'title', 'organization', 'bio', 'focus_areas'],
@@ -28,34 +27,29 @@ const TABS = {
   Profiles:    ['person_id', 'person_name', 'interviewee_characteristics', 'focus_1', 'focus_2', 'focus_3', 'strong_view', 'issue_tags']
 };
 
+/* ---------- Web app entry points ---------- */
+
 function doPost(e) {
   let body;
   try { body = JSON.parse(e.postData.contents); }
   catch (err) { return respond({ ok: false, error: 'bad_request' }); }
 
-  if (body.action === 'load') return respond({ ok: true, state: cachedState() });
+  const codes = configuredCodes();
+  if (!codes.attendee && !codes.admin) return respond({ ok: false, error: 'no_password_set' });
+  const role = roleFor(body.code, codes);
+  if (!role) {
+    Utilities.sleep(1500);   // slows down anyone trying to guess the code
+    return respond({ ok: false, error: 'bad_code' });
+  }
+  const admin = role === 'admin';
 
-  if (body.action === 'profiles') {
-    const real = adminPassword();
-    if (!real) return respond({ ok: false, error: 'no_password_set' });
-    if (String(body.password || '').trim() !== real) return respond({ ok: false, error: 'bad_password' });
-    return respond({ ok: true, profiles: cachedProfiles(), rev: getRev() });
+  // Everyone with a valid code: the agenda and the board. Admins also get bios and focus areas.
+  if (body.action === 'login' || body.action === 'load') {
+    return respond({ ok: true, role: role, state: admin ? cachedState() : publicState(cachedState()) });
   }
 
-  if (body.action === 'saveProfile') {
-    const real = adminPassword();
-    if (!real) return respond({ ok: false, error: 'no_password_set' });
-    if (String(body.password || '').trim() !== real) return respond({ ok: false, error: 'bad_password' });
-    const lock = LockService.getScriptLock();
-    if (!lock.tryLock(20000)) return respond({ ok: false, error: 'busy' });
-    try {
-      writeProfile(String(body.person_id || ''), String(body.person_name || ''), body.profile || {});
-      CacheService.getScriptCache().remove('profiles');
-      return respond({ ok: true });
-    } finally {
-      lock.releaseLock();
-    }
-  }
+  // Everything below is admin-only.
+  if (!admin) return respond({ ok: false, error: 'admin_only' });
 
   if (body.action === 'save') {
     const lock = LockService.getScriptLock();
@@ -71,13 +65,28 @@ function doPost(e) {
       lock.releaseLock();
     }
   }
+
+  if (body.action === 'profiles') return respond({ ok: true, profiles: cachedProfiles() });
+
+  if (body.action === 'saveProfile') {
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(20000)) return respond({ ok: false, error: 'busy' });
+    try {
+      writeProfile(String(body.person_id || ''), String(body.person_name || ''), body.profile || {});
+      CacheService.getScriptCache().remove('profiles');
+      return respond({ ok: true });
+    } finally {
+      lock.releaseLock();
+    }
+  }
+
   return respond({ ok: false, error: 'unknown_action' });
 }
 
-// Opening the web app URL in a browser shows this, which is a quick way to
-// confirm the deployment is reachable.
+// Opening the web app URL in a browser shows this: a quick check that the deployment works.
+// It never returns any retreat data.
 function doGet() {
-  return respond({ ok: true, message: 'The breakout planning backend is running.' });
+  return respond({ ok: true, message: 'The retreat site backend is running.' });
 }
 
 // Edits made directly in the Sheet bump the revision, so open pages refresh.
@@ -92,14 +101,34 @@ function onEdit(e) {
 // Run once from the editor to grant permissions and check the setup.
 function testSetup() {
   const s = readState();
-  Logger.log('People: %s. Breakout slots: %s. Interview profiles matched: %s. Admin password set: %s.',
-    s.people.length, s.rounds.length, Object.keys(readProfiles()).length,
-    !!adminPassword());
+  const codes = configuredCodes();
+  Logger.log('People: %s. Breakout slots: %s. Agenda days: %s. Interview profiles matched: %s.',
+    s.people.length, s.rounds.length, s.agenda.length, Object.keys(readProfiles()).length);
+  Logger.log('Attendee code set: %s. Admin password set: %s.', !!codes.attendee, !!codes.admin);
+  if (codes.attendee && codes.admin && codes.attendee.toLowerCase() === codes.admin.toLowerCase())
+    Logger.log('WARNING: the attendee code and admin password are the same. Change one of them.');
 }
 
-/* ---------- Cache: makes sign-in and refreshes fast ---------- */
-// Reading five tabs takes a second or two; the cached copy comes back almost instantly.
-// It's cleared whenever anything changes, and expires after 10 minutes regardless.
+/* ---------- Codes ---------- */
+
+function configuredCodes() {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    attendee: String(props.getProperty('ATTENDEE_CODE') || '').trim(),
+    admin: String(props.getProperty('ADMIN_PASSWORD') || props.getProperty('PLANNER_PASSWORD') || '').trim()
+  };
+}
+
+function roleFor(given, codes) {
+  const c = String(given || '').trim();
+  if (!c) return '';
+  if (codes.admin && c === codes.admin) return 'admin';
+  if (codes.attendee && c.toLowerCase() === codes.attendee.toLowerCase()) return 'attendee';
+  return '';
+}
+
+/* ---------- Cache: makes loading fast ---------- */
+
 const CACHE_KEY = 'state';
 function cachedState() {
   const cache = CacheService.getScriptCache();
@@ -107,7 +136,7 @@ function cachedState() {
   if (hit) return JSON.parse(hit);
   const s = readState();
   const json = JSON.stringify(s);
-  if (json.length < 95000) cache.put(CACHE_KEY, json, 600);
+  if (json.length < 90000) cache.put(CACHE_KEY, json, 600);
   return s;
 }
 function cachedProfiles() {
@@ -116,59 +145,19 @@ function cachedProfiles() {
   if (hit) return JSON.parse(hit);
   const p = readProfiles();
   const json = JSON.stringify(p);
-  if (json.length < 95000) cache.put('profiles', json, 600);
+  if (json.length < 90000) cache.put('profiles', json, 600);
   return p;
 }
 function clearCache() { CacheService.getScriptCache().removeAll([CACHE_KEY, 'profiles']); }
 
-// Profiles keyed by person_id. Rows without a matching id are matched by name.
-function readProfiles() {
-  const people = table('People');
-  const byName = {};
-  people.forEach(p => { byName[String(p.name).toLowerCase()] = p.person_id; });
-  const ids = new Set(people.map(p => p.person_id));
-  const out = {};
-  table('Profiles').forEach(r => {
-    const id = ids.has(r.person_id) ? r.person_id : byName[String(r.person_name).toLowerCase()];
-    if (!id) return;
-    out[id] = {
-      chars: r.interviewee_characteristics, f1: r.focus_1, f2: r.focus_2, f3: r.focus_3, view: r.strong_view,
-      tags: String(r.issue_tags || '').split(/[;\n]/).map(t => t.trim()).filter(Boolean)
-    };
+// What attendees receive: no bios or focus areas.
+function publicState(s) {
+  return Object.assign({}, s, {
+    people: s.people.map(p => ({ id: p.id, name: p.name, title: p.title, org: p.org }))
   });
-  return out;
 }
 
-// Updates one person's row in the Profiles tab (matched by id, then name), or adds a row.
-function writeProfile(id, name, p) {
-  const sh = sheet('Profiles');
-  const values = sh.getDataRange().getDisplayValues();
-  const head = values[0].map(h => String(h).trim());
-  const col = h => head.indexOf(h);
-  let row = -1;
-  for (let i = 1; i < values.length; i++) {
-    if (id && String(values[i][col('person_id')]).trim() === id) { row = i; break; }
-  }
-  if (row < 0 && name) for (let i = 1; i < values.length; i++) {
-    if (String(values[i][col('person_name')]).trim().toLowerCase() === name.toLowerCase()) { row = i; break; }
-  }
-  const rec = {
-    person_id: id, person_name: name, interviewee_characteristics: p.chars || '',
-    focus_1: p.f1 || '', focus_2: p.f2 || '', focus_3: p.f3 || '',
-    strong_view: p.view || '', issue_tags: (p.tags || []).join('; ')
-  };
-  const line = head.map((h, j) => (h in rec ? rec[h] : (row >= 0 ? values[row][j] : '')));
-  const target = row >= 0 ? row + 1 : Math.max(sh.getLastRow(), 1) + 1;
-  sh.getRange(target, 1, 1, head.length).setNumberFormat('@').setValues([line]);
-}
-
-/* ---------- Helpers ---------- */
-
-// ADMIN_PASSWORD (PLANNER_PASSWORD still works if it was set earlier).
-function adminPassword() {
-  const props = PropertiesService.getScriptProperties();
-  return String(props.getProperty('ADMIN_PASSWORD') || props.getProperty('PLANNER_PASSWORD') || '').trim();
-}
+/* ---------- Reading and writing the Sheet ---------- */
 
 function respond(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
@@ -219,11 +208,12 @@ function setRev(n) {
 }
 
 function readState() {
+  const set = settingsMap();
   const people = table('People', 'person_id', 'p').map(r => ({
     id: r.person_id, name: r.name, title: r.title, org: r.organization, bio: r.bio, focus: r.focus_areas || '' }));
   const sessions = table('Sessions', 'session_id', 's');
   const rounds = table('Slots', 'slot_id', 'r').map(sl => ({
-    id: sl.slot_id, label: sl.label || DEFAULT_LABELS[sl.slot_id] || sl.slot_id, note: sl.note || '',
+    id: sl.slot_id, label: sl.label || '', note: sl.note || '',
     sessions: sessions.filter(x => x.slot_id === sl.slot_id).map(x => ({ id: x.session_id, title: x.title, desc: x.description }))
   }));
   const assign = {};
@@ -232,7 +222,18 @@ function readState() {
     if (!a.slot_id || !a.person_id || !a.session_id || !assign[a.slot_id]) return;
     assign[a.slot_id][a.person_id] = { s: a.session_id, f: /^(true|yes|1|x)$/i.test(a.facilitator) };
   });
-  return { people, rounds, assign, rev: getRev() };
+  const items = table('Agenda', 'item_id', 'i');
+  const agenda = table('Days', 'day_id', 'd').map(d => ({
+    id: d.day_id, label: d.label, short: d.short_label, theme: d.guiding_question,
+    items: items.filter(x => x.day_id === d.day_id).map(x => ({
+      id: x.item_id, start: x.start, end: x.end, title: x.title, desc: x.description,
+      room: x.room || '', lead: x.led_by, kind: x.kind, round: x.breakout_slot || '' }))
+  }));
+  return {
+    people, rounds, assign, agenda,
+    event: { name: set.event_name || '', subtitle: set.subtitle || '', dates: set.dates || '', note: set.note || '' },
+    rev: Number(set.revision || 0)
+  };
 }
 
 function writeTable(name, rows) {
@@ -246,6 +247,7 @@ function writeTable(name, rows) {
   sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
 }
 
+// Saves the board. Days, Agenda, Settings and Profiles are never rewritten here.
 function writeState(s) {
   const names = {};
   (s.people || []).forEach(p => { names[p.id] = p.name; });
@@ -253,11 +255,52 @@ function writeState(s) {
   writeTable('Sessions', [].concat(...(s.rounds || []).map(r => (r.sessions || []).map(x => ({
     slot_id: r.id, session_id: x.id, title: x.title, description: x.desc })))));
   writeTable('People', (s.people || []).map(p => ({
-    person_id: p.id, name: p.name, title: p.title, organization: p.org, bio: p.bio, focus_areas: p.focus || '' })));
+    person_id: p.id, name: p.name, title: p.title, organization: p.org, bio: p.bio || '', focus_areas: p.focus || '' })));
   const rows = [];
   Object.keys(s.assign || {}).forEach(slot => Object.keys(s.assign[slot]).forEach(pid => {
     const a = s.assign[slot][pid];
     rows.push({ slot_id: slot, person_id: pid, person_name: names[pid] || '', session_id: a.s, facilitator: a.f ? 'TRUE' : '' });
   }));
   writeTable('Assignments', rows);
+}
+
+// Profiles keyed by person_id. Rows without a matching id are matched by name.
+function readProfiles() {
+  const people = table('People');
+  const byName = {};
+  people.forEach(p => { byName[String(p.name).toLowerCase()] = p.person_id; });
+  const ids = new Set(people.map(p => p.person_id));
+  const out = {};
+  table('Profiles').forEach(r => {
+    const id = ids.has(r.person_id) ? r.person_id : byName[String(r.person_name).toLowerCase()];
+    if (!id) return;
+    out[id] = {
+      chars: r.interviewee_characteristics, f1: r.focus_1, f2: r.focus_2, f3: r.focus_3, view: r.strong_view,
+      tags: String(r.issue_tags || '').split(/[;\n]/).map(t => t.trim()).filter(Boolean)
+    };
+  });
+  return out;
+}
+
+// Updates one person's row in the Profiles tab (matched by id, then name), or adds a row.
+function writeProfile(id, name, p) {
+  const sh = sheet('Profiles');
+  const values = sh.getDataRange().getDisplayValues();
+  const head = values[0].map(h => String(h).trim());
+  const col = h => head.indexOf(h);
+  let row = -1;
+  for (let i = 1; i < values.length; i++) {
+    if (id && String(values[i][col('person_id')]).trim() === id) { row = i; break; }
+  }
+  if (row < 0 && name) for (let i = 1; i < values.length; i++) {
+    if (String(values[i][col('person_name')]).trim().toLowerCase() === name.toLowerCase()) { row = i; break; }
+  }
+  const rec = {
+    person_id: id, person_name: name, interviewee_characteristics: p.chars || '',
+    focus_1: p.f1 || '', focus_2: p.f2 || '', focus_3: p.f3 || '',
+    strong_view: p.view || '', issue_tags: (p.tags || []).join('; ')
+  };
+  const line = head.map((h, j) => (h in rec ? rec[h] : (row >= 0 ? values[row][j] : '')));
+  const target = row >= 0 ? row + 1 : Math.max(sh.getLastRow(), 1) + 1;
+  sh.getRange(target, 1, 1, head.length).setNumberFormat('@').setValues([line]);
 }
